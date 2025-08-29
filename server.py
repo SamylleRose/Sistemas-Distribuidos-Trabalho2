@@ -8,7 +8,7 @@ from PIL import Image, ImageTk
 
 # Passo 1 --- Configurações ---
 HOST = '0.0.0.0'  # Escuta em todas as interfaces de rede 
-PORT = 5001      # Porta para escutar 
+PORT = 5001       # Porta para escutar 
 SAVE_DIR = "data" # Diretório para salvar as imagens recebidas
 
 # --- Classe da Aplicação GUI com Tkinter ---
@@ -50,13 +50,20 @@ def handle_client(conn, addr, app_gui):
     """ Função executada em uma thread para cada cliente conectado. """
     print(f"Conectado por {addr}")
     try:
-        # Passo 3.1: Receber o tamanho da imagem (4 bytes)
-        packed_size = conn.recv(4)
-        if not packed_size:
-            return
-        
-        # Desempacota os 4 bytes para um inteiro
+        # Passo 3.1: Receber o tamanho da imagem (4 bytes) de forma robusta
+        packed_size = b''
+        while len(packed_size) < 4:
+            # Pede os bytes que faltam para completar os 4
+            chunk = conn.recv(4 - len(packed_size))
+            if not chunk:
+                # Se não receber nada, o cliente desconectou
+                print(f"Cliente {addr} desconectou prematuramente.")
+                return # Termina a função para esta thread
+            packed_size += chunk
+
+        # Se chegamos aqui, temos os 4 bytes
         img_size = struct.unpack('>I', packed_size)[0]
+        print(f"Recebendo imagem de {img_size} bytes de {addr}")
 
         # Passo 3.2: Receber os dados da imagem em partes até o tamanho total
         img_data = b''
@@ -66,6 +73,11 @@ def handle_client(conn, addr, app_gui):
                 break
             img_data += chunk
         
+        # Verifica se a imagem foi recebida por completo
+        if len(img_data) != img_size:
+            print(f"Erro: Recebidos {len(img_data)} de {img_size} bytes. Imagem incompleta.")
+            return
+
         # Passo 3.3: Salvar a imagem em disco
         now = datetime.now()
         date_dir = now.strftime("%Y-%m-%d")
